@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env
+tradewinds_captures/
+tradewinds_state.json

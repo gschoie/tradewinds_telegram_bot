@@ -1,0 +1,52 @@
+name: TradeWinds Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매시 정각 실행. 야간(KST 01~05)은 스크립트가 스스로 스킵한다.
+    - cron: "0 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tradewinds-bot
+  cancel-in-progress: true
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # 실행 간 signature 상태를 캐시로 유지(자기커밋 없이 중복판단).
+      # run_id를 키에 넣어 매번 새로 저장되고, restore-keys로 직전 상태를 복원한다.
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: tradewinds_state.json
+          key: tradewinds-state-${{ github.run_id }}
+          restore-keys: |
+            tradewinds-state-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run TradeWinds bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_NOTIFY_ERRORS: "true"
+          TW_SEARCH_QUERY: korea
+        run: python tradewinds_telegram_bot.py --once
