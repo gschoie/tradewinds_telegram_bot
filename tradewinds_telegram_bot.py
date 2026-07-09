@@ -317,6 +317,24 @@ def run_once() -> int:
             if not articles:
                 raise RuntimeError("기사 링크를 추출하지 못했습니다(차단/구조변경 가능).")
 
+            # 진단 로그: 페이지 정렬/결과수 + 추출된 제목 (Actions 환경 검증용)
+            try:
+                meta = page.evaluate(
+                    """() => {
+                      const t = (document.body.innerText || '');
+                      const showing = (t.match(/Showing[^\\n]*results/i) || [''])[0];
+                      const sel = document.querySelector('select');
+                      const sort = (sel && sel.options[sel.selectedIndex]) ? sel.options[sel.selectedIndex].text : '';
+                      return {showing: showing.trim(), sort: sort.trim()};
+                    }"""
+                )
+                print(f"[diag] {meta.get('showing','')} | sort='{meta.get('sort','')}'", flush=True)
+            except Exception as e:
+                print(f"[diag] meta fail: {e}", flush=True)
+            print("[diag] 추출된 기사:", flush=True)
+            for i, a in enumerate(articles, 1):
+                print(f"  {i}. {a['title']}", flush=True)
+
             signature = "\n".join(sorted(a["link"] for a in articles))
             previous = load_signature()
 
