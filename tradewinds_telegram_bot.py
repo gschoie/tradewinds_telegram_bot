@@ -143,6 +143,15 @@ def prepare_page(page: Page) -> None:
         page.wait_for_load_state("networkidle", timeout=15_000)
     except PlaywrightTimeoutError:
         pass
+    # 기사 목록(a[href*="/2-1-"])이 충분히 렌더될 때까지 대기.
+    # 부분 렌더 상태에서 추출하면 최신 기사가 통째로 누락될 수 있다.
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll('a[href*=\"/2-1-\"]').length >= 8",
+            timeout=15_000,
+        )
+    except PlaywrightTimeoutError:
+        pass
     # 쿠키/광고동의(CMP)·팝업·광고·iframe을 DOM에서 완전히 제거한다(잔상 방지).
     # 주의: '[class*="ad"]' 같은 광범위 선택자는 body에 붙은 클래스(loaded 등)까지
     # 매칭해 구조를 부수므로 쓰지 않는다. html/body/head는 절대 삭제하지 않는다.
@@ -236,9 +245,8 @@ def extract_articles(page: Page, limit: int) -> list[dict[str, str]]:
         """
     )
     seen: set[str] = set()
-    articles: list[dict[str, str]] = []
-    ordered = sorted(raw_items, key=lambda it: (float(it.get("top") or 0), float(it.get("left") or 0)))
-    for item in ordered:
+    candidates: list[dict] = []
+    for item in raw_items:
         title = re.sub(r"\s+", " ", str(item.get("title", ""))).strip()
         link = normalize_link(str(item.get("href", "")))
         if not link or not title or not is_article(link, title):
@@ -246,10 +254,16 @@ def extract_articles(page: Page, limit: int) -> list[dict[str, str]]:
         if link in seen:
             continue
         seen.add(link)
-        articles.append({"title": title, "link": link})
-        if len(articles) >= limit:
-            break
-    return articles
+        candidates.append({"title": title, "link": link, "id": article_id(link)})
+    # 기사 ID(URL 끝 숫자, 클수록 최신) 내림차순으로 정렬 → 페이지 정렬 상태와
+    # 무관하게 항상 '최신순'을 보장한다. 그다음 상위 limit개만 취한다.
+    candidates.sort(key=lambda a: a["id"], reverse=True)
+    return [{"title": a["title"], "link": a["link"]} for a in candidates[:limit]]
+
+
+def article_id(link: str) -> int:
+    m = re.search(r"/(\d+)$", link)
+    return int(m.group(1)) if m else -1
 
 
 def screenshot(page: Page, stamp: str) -> Path:
